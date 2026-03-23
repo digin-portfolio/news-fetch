@@ -1512,9 +1512,9 @@ if __name__ == "__main__":
     print("Entertainment News Bot — Premium Edition")
     print(f"Channel   : {TELEGRAM_CHANNEL_ID}")
     print(f"Watermark : {CHANNEL_WATERMARK}")
-    print(f"Schedule  : Every 30 mins | {MAX_POSTS_PER_RUN} posts/run")
+    print(f"Schedule  : Every 2 hours | {MAX_POSTS_PER_RUN} posts/run")
     print(f"Trailers  : Smart detection via TMDB + dedicated trailer posts")
-    print(f"News      : Google News RSS — breaking news every 30 mins")
+    print(f"News      : Google News RSS — breaking news every 2 hourss")
 
     # Start health server in background thread (keeps Render alive)
     t = threading.Thread(target=start_health_server, daemon=True)
@@ -1524,9 +1524,9 @@ if __name__ == "__main__":
     run_trailer_detector()
     run_news_monitor()  # Check breaking news on startup
 
-    schedule.every(30).minutes.do(run_bot)
-    schedule.every(30).minutes.do(run_news_monitor)
-    schedule.every(2).hours.do(run_trailer_detector)
+    schedule.every(2).hours.do(run_bot)
+    schedule.every(2).hours.do(run_news_monitor)
+    schedule.every(1).hours.do(run_trailer_detector)
     schedule.every().day.at("21:00").do(send_daily_digest)
     schedule.every().friday.at("18:00").do(send_weekend_watchlist)
 
