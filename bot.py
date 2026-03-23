@@ -4,7 +4,9 @@ import time
 import re
 import schedule
 import requests
+import threading
 import xml.etree.ElementTree as ET
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
@@ -18,9 +20,13 @@ OMDB_API_KEY        = os.getenv("OMDB_API_KEY")
 CHANNEL_WATERMARK   = os.getenv("CHANNEL_WATERMARK", "@anime_24hr")
 ADMIN_CHAT_ID       = os.getenv("ADMIN_CHAT_ID", "")  # Your Telegram user ID for DM alerts
 
-SENT_IDS_FILE   = "sent_ids.json"
-DIGEST_FILE     = "digest_items.json"
-ROTATION_FILE   = "rotation_state.json"
+# Use /tmp on Render (persists during session), local path otherwise
+_IS_RENDER      = os.getenv("RENDER", "") != ""
+_STATE_DIR      = "/tmp" if _IS_RENDER else "."
+
+SENT_IDS_FILE   = os.path.join(_STATE_DIR, "sent_ids.json")
+DIGEST_FILE     = os.path.join(_STATE_DIR, "digest_items.json")
+ROTATION_FILE   = os.path.join(_STATE_DIR, "rotation_state.json")
 TMDB_BASE       = "https://api.themoviedb.org/3"
 TMDB_BACKDROP   = "https://image.tmdb.org/t/p/w1280"
 TMDB_POSTER     = "https://image.tmdb.org/t/p/w780"
@@ -867,7 +873,7 @@ def run_bot():
     if not new_items:
         print("Nothing new this cycle.")
         # Track how many cycles in a row had nothing
-        empty_state_file = "empty_cycles.json"
+        empty_state_file = os.path.join(_STATE_DIR, "empty_cycles.json")
         try:
             emp = json.load(open(empty_state_file)) if os.path.exists(empty_state_file) else {"count": 0, "last_dm": ""}
         except:
@@ -940,7 +946,7 @@ def run_bot():
 # the moment a new trailer becomes available
 # ─────────────────────────────────────────────
 
-TRAILER_STATE_FILE = "trailer_state.json"
+TRAILER_STATE_FILE = os.path.join(_STATE_DIR, "trailer_state.json")
 
 def load_trailer_state():
     """Tracks which items already had a trailer last time we checked."""
@@ -1138,7 +1144,8 @@ import xml.etree.ElementTree as ET
 import html
 import hashlib
 
-NEWS_SENT_FILE = "news_sent.json"
+NEWS_SENT_FILE        = os.path.join(_STATE_DIR, "news_sent.json")
+NEWS_SENT_TITLES_FILE = os.path.join(_STATE_DIR, "news_sent_titles.json")
 
 # Google News RSS queries — one per topic
 NEWS_QUERIES = [
@@ -1178,6 +1185,30 @@ def load_news_sent():
 def save_news_sent(ids):
     with open(NEWS_SENT_FILE, "w") as f:
         json.dump(ids[-5000:], f)
+
+def load_news_titles():
+    if os.path.exists(NEWS_SENT_TITLES_FILE):
+        with open(NEWS_SENT_TITLES_FILE) as f:
+            return json.load(f)
+    return []
+
+def save_news_titles(titles):
+    with open(NEWS_SENT_TITLES_FILE, "w") as f:
+        json.dump(titles[-500:], f)
+
+def is_similar_to_sent(title, news_sent_titles):
+    """Check if a title is too similar to already-sent news."""
+    t = re.sub(r'[^a-z0-9 ]', '', title.lower()).strip()
+    words_t = set(t.split())
+    for sent_title in news_sent_titles[-100:]:  # Check last 100
+        s = re.sub(r'[^a-z0-9 ]', '', sent_title.lower()).strip()
+        words_s = set(s.split())
+        # If 70%+ words match — it's the same story
+        if len(words_t) > 0 and len(words_s) > 0:
+            overlap = len(words_t & words_s) / max(len(words_t), len(words_s))
+            if overlap >= 0.7:
+                return True
+    return False
 
 
 def fetch_google_news(query, label):
@@ -1231,7 +1262,12 @@ def fetch_google_news(query, label):
                     pass
 
             # Create unique ID from title hash
-            uid = "news_" + hashlib.md5(title.encode()).hexdigest()[:12]
+            # Normalize title for dedup — removes source name, punctuation, case
+            normalized = re.sub(r'[^a-z0-9 ]', '', title.lower())
+            normalized = re.sub(r'\s+', ' ', normalized).strip()
+            # Also remove common source suffixes like "- Koimoi" "| FilmiBeat"
+            normalized = re.sub(r'[-|]\s*\w+\s*$', '', normalized).strip()
+            uid = "news_" + hashlib.md5(normalized.encode()).hexdigest()[:12]
 
             # Clean up description
             clean_desc = re.sub(r"<[^>]+>", "", desc).strip()[:300]
@@ -1465,8 +1501,13 @@ def run_news_monitor():
         if item["id"] not in seen:
             seen.add(item["id"])
             deduped.append(item)
-    new_items = [i for i in deduped if i["id"] not in news_sent]
-    print(f"  Found: {len(deduped)} | New: {len(new_items)}")
+    sent_titles = load_news_titles()
+    new_items = [
+        i for i in deduped
+        if i["id"] not in news_sent
+        and not is_similar_to_sent(i["title"], sent_titles)
+    ]
+    print(f"  Found: {len(deduped)} | New (after dedup): {len(new_items)}")
     if not new_items:
         print("  No new breaking news.")
         return
@@ -1488,7 +1529,9 @@ def run_news_monitor():
         if result.get("ok"):
             for item in items:
                 news_sent.append(item["id"])
+                sent_titles.append(item["title"])
             save_news_sent(news_sent)
+            save_news_titles(sent_titles)
             digest.append({"id": items[0]["id"], "title": topic,
                            "type": "📰 News", "release_date": date_today(), "rating": None})
             save_digest(digest)
