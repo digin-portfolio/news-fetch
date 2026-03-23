@@ -1,0 +1,36 @@
+# Secret keys — NEVER push these
+.env
+
+# Bot state files — no need to track these
+sent_ids.json
+news_sent.json
+trailer_state.json
+rotation_state.json
+digest_items.json
+empty_cycles.json
+yt_sent.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+nohup.out
+
+# Test files
+test_gemini.py
+test_youtube.py
+find_channels.py

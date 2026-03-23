@@ -1,0 +1,58 @@
+# 🎬 Entertainment News Bot — @anime_24hr
+
+A fully automated Telegram channel bot that posts movies, anime, K-drama, Indian cinema, web series, breaking news and trailer drops — every 30 minutes.
+
+## Features
+- 🎬 Movies, Anime, K-Drama, Indian (ML/TA/HI/TE), Web Series from TMDB & Jikan
+- 📰 Breaking news via Google News RSS (box office, trailers, announcements)
+- 🎬 Smart trailer detector — posts when a new trailer drops on TMDB
+- 📋 Daily digest at 9 PM
+- 🍿 Weekend watchlist every Friday
+- 🔔 DM alert if bot has nothing to post for 2.5 hours
+- 🚫 Content quality filter + duplicate prevention
+
+## Setup
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/yourusername/entertainment-bot.git
+cd entertainment-bot
+```
+
+### 2. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Create your .env file
+```bash
+cp .env.example .env
+# Fill in your API keys
+```
+
+### 4. Run
+```bash
+python bot.py
+```
+
+## API Keys (all free)
+
+| Key | Where |
+|-----|-------|
+| TMDB_API_KEY | themoviedb.org → Settings → API |
+| TELEGRAM_BOT_TOKEN | @BotFather on Telegram |
+| TELEGRAM_CHANNEL_ID | Your channel ID |
+| GROQ_API_KEY | console.groq.com |
+| OMDB_API_KEY | omdbapi.com |
+| ADMIN_CHAT_ID | Your Telegram user ID |
+| CHANNEL_WATERMARK | e.g. @anime_24hr |
+
+## Schedule
+
+| Task | Frequency |
+|------|-----------|
+| Content posts | Every 30 mins |
+| Breaking news | Every 30 mins |
+| Trailer detector | Every 2 hours |
+| Daily digest | 9 PM daily |
+| Weekend watchlist | Friday 6 PM |
