@@ -1331,20 +1331,25 @@ def build_news_caption(item):
 
 
 def extract_topic(title):
-    """Extract the main topic/movie name from a news title."""
-    # Remove common news suffixes
-    title = re.sub(r"\s*[-–|:].*$", "", title)
-    title = re.sub(r"(box office|collection|day \d|week \d|crore|million|analysis|verdict|review|trailer|teaser).*$",
-                   "", title, flags=re.IGNORECASE).strip()
-    # Take first 3 meaningful words
-    words = [w for w in title.split() if len(w) > 2]
-    return " ".join(words[:3]).lower().strip()
+    """Extract core movie/show name from a news title."""
+    # Remove source name after dash/pipe
+    t = re.sub(r'[\s]*[-\u2013|:][\s]*\w[\w\s]*$', '', title).strip()
+    # Remove common news words
+    t = re.sub(r'(box office|collection|day \d+|week \d+|crore|million|billion|'
+               r'trailer|teaser|review|analysis|verdict|opening|worldwide|overseas|'
+               r'record|blockbuster|hits|crosses|earns|makes|grosses|total|'
+               r'first|second|third|look|official|release|date|confirmed|'
+               r'postponed|delayed|new|latest|breaking)',
+               '', t, flags=re.IGNORECASE)
+    t = re.sub(r'\s+', ' ', t).strip()
+    words = [w for w in t.split() if len(w) > 2]
+    return " ".join(words[:4]).lower().strip()
 
 
 def group_news_by_topic(items):
     """
-    Group news items about the same topic together.
-    Returns list of groups: [{topic, items: [...]}]
+    Group news by movie/show name using smart keyword matching.
+    Works for: Dhurandhar 2, Jujutsu Kaisen, etc.
     """
     groups = []
     used   = set()
@@ -1352,106 +1357,39 @@ def group_news_by_topic(items):
     for i, item in enumerate(items):
         if i in used:
             continue
-        topic   = extract_topic(item["title"])
-        group   = [item]
+
+        topic_i = extract_topic(item["title"])
+        # Also check full title for common keywords
+        title_words_i = set(re.findall(r'[a-zA-Z0-9]+', item["title"].lower()))
+        # Remove very common words
+        stopwords = {'the','a','an','of','in','on','at','to','for','is','are',
+                     'was','were','has','have','had','its','this','that','with',
+                     'from','and','or','but','not','box','office','day','crore'}
+        title_words_i -= stopwords
+
+        group = [item]
         used.add(i)
 
-        # Find other items about same topic
         for j, other in enumerate(items):
             if j in used or j == i:
                 continue
-            other_topic = extract_topic(other["title"])
-            # Match if topics share 2+ words
-            t_words = set(topic.lower().split())
-            o_words = set(other_topic.lower().split())
-            if len(t_words & o_words) >= 2:
+
+            topic_j = extract_topic(other["title"])
+            title_words_j = set(re.findall(r'[a-zA-Z0-9]+', other["title"].lower()))
+            title_words_j -= stopwords
+
+            # Match if topics share 2+ meaningful words OR titles share 2+ meaningful words
+            topic_overlap = len(set(topic_i.split()) & set(topic_j.split()))
+            title_overlap = len(title_words_i & title_words_j)
+
+            if topic_overlap >= 2 or title_overlap >= 3:
                 group.append(other)
                 used.add(j)
 
-        groups.append({"topic": topic, "items": group})
+        groups.append({"topic": topic_i, "items": group, "label": item.get("label","📰 News")})
 
     return groups
 
-
-def build_grouped_news_caption(group):
-    """Build a single combined post for multiple news about same topic."""
-    items     = group["items"]
-    topic     = group["topic"].title()
-    label     = items[0].get("label", "📰 News")
-    sources   = list(dict.fromkeys(i.get("source","") for i in items if i.get("source")))[:3]
-    links     = [i["link"] for i in items if i.get("link")]
-
-    # AI summarize all headlines together
-    headlines = "\n".join("- " + i["title"] for i in items[:5])
-    summary   = groq(
-        f"Summarize these news headlines about '{topic}' into 3-4 sentences. "
-        f"Be factual, include key numbers/facts. No hype:\n\n{headlines}",
-        150
-    )
-
-    # Build bullet points from titles
-    bullets = []
-    for item in items[:5]:
-        # Extract the key fact from title
-        clean = item["title"]
-        # Remove source name at end (after " - " or " | ")
-        clean = re.sub(r"\s*[-–|]\s*[A-Z][^-|]+$", "", clean).strip()
-        bullets.append(f"• {clean}")
-
-    sources_line = ", ".join(sources) if sources else ""
-
-    lines = [
-        f"<b>📰 {label}</b>",
-        "",
-        f"<b>{topic} — Latest Updates</b>",
-        "",
-    ]
-
-    # Blockquote with bullet points
-    bq_lines = bullets[:5]
-    lines.append("<blockquote>" + "\n".join(bq_lines) + "</blockquote>")
-
-    if summary:
-        lines.append("")
-        lines.append(summary)
-
-    if sources_line:
-        lines.append("")
-        lines.append(f"📌 {sources_line}")
-
-    # Clean hashtags from topic
-    tag_words = re.findall(r"[A-Za-z0-9]+", topic)
-    hashtags  = " ".join(f"#{w}" for w in tag_words[:3] if len(w) > 2)
-    lines.append("")
-    lines.append(hashtags)
-    lines.append(f"— {CHANNEL_WATERMARK}")
-
-    return trim_caption("\n".join(lines)), links[0] if links else None
-
-
-def extract_topic(title):
-    t = re.sub(r'\s*[-–|:].*$', '', title)
-    t = re.sub(r'(box office|collection|day \d|crore|million|analysis|trailer|teaser|review).*$', '', t, flags=re.IGNORECASE).strip()
-    words = [w for w in t.split() if len(w) > 2]
-    return " ".join(words[:3]).lower().strip()
-
-
-def group_news_by_topic(items):
-    groups, used = [], set()
-    for i, item in enumerate(items):
-        if i in used: continue
-        topic = extract_topic(item["title"])
-        group = [item]
-        used.add(i)
-        for j, other in enumerate(items):
-            if j in used or j == i: continue
-            t_words = set(topic.lower().split())
-            o_words = set(extract_topic(other["title"]).lower().split())
-            if len(t_words & o_words) >= 2:
-                group.append(other)
-                used.add(j)
-        groups.append({"topic": topic, "items": group})
-    return groups
 
 
 def build_grouped_news_caption(group):
