@@ -1500,6 +1500,26 @@ def run_news_monitor():
     print(f"  News done. Posted {posted} grouped post(s).")
 
 
+
+# ─────────────────────────────────────────────
+# HEALTH CHECK SERVER
+# Keeps Render free tier alive via UptimeRobot
+# ─────────────────────────────────────────────
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK - Bot is running")
+    def log_message(self, format, *args):
+        pass  # Suppress access logs
+
+def start_health_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    print(f"Health check server running on port {port}")
+    server.serve_forever()
+
 # ─────────────────────────────────────────────
 # ENTRY
 # ─────────────────────────────────────────────
@@ -1511,6 +1531,10 @@ if __name__ == "__main__":
     print(f"Schedule  : Every 30 mins | {MAX_POSTS_PER_RUN} posts/run")
     print(f"Trailers  : Smart detection via TMDB + dedicated trailer posts")
     print(f"News      : Google News RSS — breaking news every 30 mins")
+
+    # Start health server in background thread (keeps Render alive)
+    t = threading.Thread(target=start_health_server, daemon=True)
+    t.start()
 
     run_bot()
     run_trailer_detector()
